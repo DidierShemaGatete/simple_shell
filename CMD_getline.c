@@ -1,72 +1,143 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
+#include "shell.h"
+
+void *_realloc(void *ptr, unsigned int old_size, unsigned int new_size);
+void assign_lineptr(char **lineptr, size_t *n, char *buffer, size_t b);
+ssize_t _getline(char **lineptr, size_t *n, FILE *stream);
 
 /**
- * _getline - reads an entire line from a file descriptor
- * @lineptr: pointer to the buffer containing the line
- * @n: size of the buffer
- * @stream: file descriptor to read from
+ * _realloc - Reallocates a memory block using malloc and free.
+ * @ptr: A pointer to the memory previously allocated.
+ * @old_size: The size in bytes of the allocated space for ptr.
+ * @new_size: The size in bytes for the new memory block.
  *
- * Return: the number of characters read, or -1 on failure
+ * Return: If new_size == old_size - ptr.
+ *         If new_size == 0 and ptr is not NULL - NULL.
+ *         Otherwise - a pointer to the reallocated memory block.
  */
-
-ssize_t _getline(char **lineptr, size_t *n, int stream)
+void *_realloc(void *ptr, unsigned int old_size, unsigned int new_size)
 {
-	static char buffer[1024];
-	static char *buf_pos;
-	ssize_t n_read = 0;
-	ssize_t total_read = 0;
+	void *mem;
+	char *ptr_copy, *filler;
+	unsigned int index;
 
-	if (!lineptr || !n)
-		return (-1);
-	/* Allocate buffer if it doesn't exist or if the requested size is larger */
-	if (*lineptr == NULL || *n == 0)
+	if (new_size == old_size)
+		return (ptr);
+
+	if (ptr == NULL)
 	{
-		*n = 120;
-		*lineptr = malloc(*n);
+		mem = malloc(new_size);
+		if (mem == NULL)
+			return (NULL);
 
-		if (!*lineptr)
-			return (-1);
+		return (mem);
 	}
 
-	/* Read from stdin in chunks */
-
-	while ((n_read = read(stream, buffer, 1024)) > 0)
+	if (new_size == 0 && ptr != NULL)
 	{
-		/* loop through each character int the buffer*/
-		for (ssize_t i = 0; i < n_read; i++)
+		free(ptr);
+		return (NULL);
+	}
+
+	ptr_copy = ptr;
+	mem = malloc(sizeof(*ptr_copy) * new_size);
+	if (mem == NULL)
+	{
+		free(ptr);
+		return (NULL);
+	}
+
+	filler = mem;
+
+	for (index = 0; index < old_size && index < new_size; index++)
+		filler[index] = *ptr_copy++;
+
+	free(ptr);
+	return (mem);
+}
+
+/**
+ * assign_lineptr - Reassigns the lineptr variable for _getline.
+ * @lineptr: A buffer to store an input string.
+ * @n: The size of lineptr.
+ * @buffer: The string to assign to lineptr.
+ * @b: The size of buffer.
+ */
+void assign_lineptr(char **lineptr, size_t *n, char *buffer, size_t b)
+{
+	if (*lineptr == NULL)
+	{
+		if (b > 120)
+			*n = b;
+		else
+			*n = 120;
+		*lineptr = buffer;
+	}
+	else if (*n < b)
+	{
+		if (b > 120)
+			*n = b;
+		else
+			*n = 120;
+		*lineptr = buffer;
+	}
+	else
+	{
+		_strcpy(*lineptr, buffer);
+		free(buffer);
+	}
+}
+
+/**
+ * _getline - Reads input from a stream.
+ * @lineptr: A buffer to store the input.
+ * @n: The size of lineptr.
+ * @stream: The stream to read from.
+ *
+ * Return: The number of bytes read.
+ */
+ssize_t _getline(char **lineptr, size_t *n, FILE *stream)
+{
+	static ssize_t input;
+	ssize_t ret;
+	char c = 'x', *buffer;
+	int r;
+
+	if (input == 0)
+		fflush(stream);
+	else
+		return (-1);
+	input = 0;
+
+	buffer = malloc(sizeof(char) * 120);
+	if (!buffer)
+		return (-1);
+
+	while (c != '\n')
+	{
+		r = read(STDIN_FILENO, &c, 1);
+		if (r == -1 || (r == 0 && input == 0))
 		{
-			/*if the buffer is full. resize it*/
-			if (total_read >= *n - 1)
-			{
-				*n * = 2;
-				*lineptr = realloc(*lineptr);
-				if (!*lineptr)
-					return (-1);
-
-			}
-
-			/* Store the character in the buffer */
-			(*lineptr)[total_read++] = buffer[i];
-
-			/* If we've reached the end of a line, retur */
-			if (buffer[i] == '\n')
-			{
-				(*lineptr)[total_read] = '\0';
-				return (total_read);
-			}
+			free(buffer);
+			return (-1);
+		}
+		if (r == 0 && input != 0)
+		{
+			input++;
+			break;
 		}
 
-		/* Update buf_pos to the next character in the buffer*/
-		buf_pos = buffer + n_read;
+		if (input >= 120)
+			buffer = _realloc(buffer, input, input + 1);
+
+		buffer[input] = c;
+		input++;
 	}
+	buffer[input] = '\0';
 
-	/* If read failed or we didn't read anything, return -1 */
-	if (n_read == -1 || total_read == 0)
-		return (-1);
-	/* Add null terminator to the end of the string*/
-	(*lineptr)[total_read] = '\0';
+	assign_lineptr(lineptr, n, buffer, input);
 
-	return (total_read);
+	ret = input;
+	if (r != 0)
+		input = 0;
+	return (ret);
 }
